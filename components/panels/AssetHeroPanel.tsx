@@ -15,14 +15,13 @@ import {
   type FormEvent,
 } from "react";
 import { MOCK_DIMENSION_SCORES, RUBRIC_DIMENSIONS } from "@/lib/mock-data";
+import type { AssetInput } from "@/lib/types";
 
 type InputMode = "upload" | "url" | "generate";
 
-interface LoadedAsset {
-  src: string;
-  name: string;
-  source: "upload" | "url";
-  isObjectUrl: boolean;
+interface AssetHeroPanelProps {
+  asset: AssetInput | null;
+  onAssetChange: (next: AssetInput | null) => void;
 }
 
 const INPUT_MODES: { mode: InputMode; label: string; icon: typeof UploadCloud }[] = [
@@ -40,23 +39,14 @@ function labelFor(id: string) {
   return RUBRIC_DIMENSIONS.find((d) => d.id === id)?.label ?? id;
 }
 
-export function AssetHeroPanel() {
+export function AssetHeroPanel({ asset, onAssetChange }: AssetHeroPanelProps) {
   const contestedScores = MOCK_DIMENSION_SCORES.filter((d) => d.contested);
 
   const [mode, setMode] = useState<InputMode>("upload");
-  const [asset, setAsset] = useState<LoadedAsset | null>(null);
   const [urlDraft, setUrlDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  function replaceAsset(next: LoadedAsset) {
-    setAsset((prev) => {
-      if (prev?.isObjectUrl) URL.revokeObjectURL(prev.src);
-      return next;
-    });
-    setError(null);
-  }
 
   function loadFile(file: File | undefined) {
     if (!file) return;
@@ -64,11 +54,12 @@ export function AssetHeroPanel() {
       setError("That file isn't an image. Try PNG, JPG, or WEBP.");
       return;
     }
-    replaceAsset({
-      src: URL.createObjectURL(file),
+    setError(null);
+    onAssetChange({
+      kind: "upload",
+      file,
+      previewUrl: URL.createObjectURL(file),
       name: file.name,
-      source: "upload",
-      isObjectUrl: true,
     });
   }
 
@@ -87,26 +78,22 @@ export function AssetHeroPanel() {
     e.preventDefault();
     const url = urlDraft.trim();
     if (!url) return;
-    replaceAsset({ src: url, name: url, source: "url", isObjectUrl: false });
+    setError(null);
+    onAssetChange({ kind: "url", url, name: url });
   }
 
   function handleImageError() {
-    setAsset((prev) => {
-      if (prev?.isObjectUrl) URL.revokeObjectURL(prev.src);
-      return null;
-    });
+    const wasUrl = asset?.kind === "url";
+    onAssetChange(null);
     setError(
-      asset?.source === "url"
+      wasUrl
         ? "Couldn't load an image from that URL."
         : "That file couldn't be read as an image.",
     );
   }
 
   function clearAsset() {
-    setAsset((prev) => {
-      if (prev?.isObjectUrl) URL.revokeObjectURL(prev.src);
-      return null;
-    });
+    onAssetChange(null);
     setUrlDraft("");
     setError(null);
   }
@@ -135,7 +122,7 @@ export function AssetHeroPanel() {
           ))}
         </div>
         <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] font-medium tracking-wide text-zinc-500 ring-1 ring-inset ring-zinc-800">
-          Mock evaluation data
+          {asset ? "Real asset · mock annotations" : "Mock evaluation data"}
         </span>
       </div>
 
@@ -155,7 +142,7 @@ export function AssetHeroPanel() {
           <div className="relative inline-block max-h-full max-w-full">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={asset.src}
+              src={asset.kind === "upload" ? asset.previewUrl : asset.url}
               alt={asset.name}
               onError={handleImageError}
               className="max-h-[calc(100vh-16rem)] max-w-full rounded-lg object-contain shadow-2xl shadow-black/40"
@@ -170,8 +157,8 @@ export function AssetHeroPanel() {
               Replace
             </button>
 
-            <div className="absolute bottom-2 left-2 rounded-md bg-zinc-950/80 px-2 py-1 font-mono text-[11px] text-zinc-400 backdrop-blur">
-              {asset.name} · {asset.source === "upload" ? "uploaded" : "pasted URL"}
+            <div className="absolute bottom-2 left-2 max-w-[80%] truncate rounded-md bg-zinc-950/80 px-2 py-1 font-mono text-[11px] text-zinc-400 backdrop-blur">
+              {asset.name} · {asset.kind === "upload" ? "uploaded" : "pasted URL"}
             </div>
 
             {ANNOTATIONS.map((a) => (

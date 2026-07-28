@@ -62,3 +62,28 @@ export interface RunSummary {
   status: "pass" | "warning" | "fail";
   timestamp: string;
 }
+
+/** The asset currently loaded in the hero pane, lifted to page level so the
+ * evaluation engine can send it to a judge without re-reading the DOM. */
+export type AssetInput =
+  | { kind: "upload"; file: File; previewUrl: string; name: string }
+  | { kind: "url"; url: string; name: string };
+
+export interface JudgeDimensionResult {
+  dimensionId: RubricDimensionId;
+  score: number;
+  rationale: string;
+}
+
+export interface JudgeRunSuccess {
+  ok: true;
+  modelId: string;
+  results: JudgeDimensionResult[];
+}
+
+export interface JudgeRunFailure {
+  ok: false;
+  error: string;
+}
+
+export type JudgeRunResponse = JudgeRunSuccess | JudgeRunFailure;
