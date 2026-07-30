@@ -1,7 +1,5 @@
 # Prism
 
-*(working name — might get a better one before this ships)*
-
 Prism looks at a picture and asks four different AI models to grade it. Then it
 does the actual scoring itself, with regular math, so no single AI gets to
 decide the final number. You get a score, and you get to see exactly where the
