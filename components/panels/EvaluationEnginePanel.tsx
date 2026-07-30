@@ -9,14 +9,16 @@ import {
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
-import {
-  JUDGES,
-  MOCK_DIMENSION_SCORES,
-  MOCK_OVERALL_SCORE,
-  MOCK_ROOT_CAUSE,
-  RUBRIC_DIMENSIONS,
-} from "@/lib/mock-data";
-import type { AssetInput, JudgeDimensionResult, JudgeRunResponse, JudgeStatus } from "@/lib/types";
+import { JUDGES, MOCK_ROOT_CAUSE, RUBRIC_DIMENSIONS } from "@/lib/mock-data";
+import type {
+  AssetInput,
+  EvalMode,
+  JudgeErrorCategory,
+  JudgeId,
+  JudgeStatus,
+  MultiJudgeRunResponse,
+  RunResponse,
+} from "@/lib/types";
 import { scoreColorClass, scoreStatus, StatusBadge } from "@/components/StatusBadge";
 
 const JUDGE_STATUS_DOT: Record<JudgeStatus, string> = {
@@ -26,23 +28,95 @@ const JUDGE_STATUS_DOT: Record<JudgeStatus, string> = {
   error: "bg-rose-400",
 };
 
+const ERROR_CATEGORY_LABEL: Record<JudgeErrorCategory, string> = {
+  "missing-key": "Key",
+  "out-of-credit": "Out of credit",
+  "rate-limited": "Rate limited",
+  network: "Network",
+  "safety-refusal": "Safety",
+  "malformed-response": "Malformed",
+  "input-error": "Input",
+  unknown: "Error",
+};
+
+const MODE_LABEL: Record<EvalMode, string> = {
+  "image-only": "image only",
+  "image-and-prompt": "image + prompt",
+  "before-after": "before + after edit",
+};
+
+const JUDGE_SHORT_LABEL: Record<JudgeId, string> = {
+  "muse-spark": "Muse",
+  claude: "Claude",
+  gpt: "GPT",
+  gemini: "Gemini",
+};
+
 function labelFor(id: string) {
   return RUBRIC_DIMENSIONS.find((d) => d.id === id)?.label ?? id;
 }
 
-interface EvaluationEnginePanelProps {
-  asset: AssetInput | null;
+function mean(nums: number[]): number {
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
-export function EvaluationEnginePanel({ asset }: EvaluationEnginePanelProps) {
-  const [claudeStatus, setClaudeStatus] = useState<JudgeStatus>("idle");
-  const [claudeResults, setClaudeResults] = useState<JudgeDimensionResult[] | null>(null);
-  const [claudeError, setClaudeError] = useState<string | null>(null);
+/** Turns any http(s) URL in an error message into a clickable link — mainly for
+ * the out-of-credit "recharge at <link>" messages. */
+function linkify(text: string) {
+  const parts = text.split(/(https?:\/\/\S+)/g);
+  return parts.map((part, i) =>
+    /^https?:\/\//.test(part) ? (
+      <a
+        key={i}
+        href={part}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-dotted underline-offset-2 hover:text-rose-300"
+      >
+        {part}
+      </a>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
 
-  async function runClaudeJudge() {
-    if (!asset || claudeStatus === "pending") return;
-    setClaudeStatus("pending");
-    setClaudeError(null);
+interface EvaluationEnginePanelProps {
+  asset: AssetInput | null;
+  prompt: string;
+  editMode: boolean;
+  beforeAsset: AssetInput | null;
+  onResult: (result: MultiJudgeRunResponse | null) => void;
+}
+
+export function EvaluationEnginePanel({
+  asset,
+  prompt,
+  editMode,
+  beforeAsset,
+  onResult,
+}: EvaluationEnginePanelProps) {
+  const [runStatus, setRunStatus] = useState<"idle" | "pending" | "done">("idle");
+  const [result, setResult] = useState<MultiJudgeRunResponse | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  function missingPieces(): string | null {
+    if (!editMode) {
+      return asset ? null : "Load an asset in the center pane to enable this.";
+    }
+    const missing: string[] = [];
+    if (!beforeAsset) missing.push("a Before image");
+    if (!asset) missing.push("an After image");
+    if (!prompt.trim()) missing.push("an edit instruction");
+    return missing.length ? `Add ${missing.join(", ")} to enable this.` : null;
+  }
+
+  const blockedReason = missingPieces();
+
+  async function runEvaluation() {
+    if (blockedReason || runStatus === "pending" || !asset) return;
+    setRunStatus("pending");
+    setRunError(null);
 
     const formData = new FormData();
     if (asset.kind === "upload") {
@@ -50,22 +124,46 @@ export function EvaluationEnginePanel({ asset }: EvaluationEnginePanelProps) {
     } else {
       formData.set("url", asset.url);
     }
+    if (editMode && beforeAsset) {
+      if (beforeAsset.kind === "upload") {
+        formData.set("beforeFile", beforeAsset.file);
+      } else {
+        formData.set("beforeUrl", beforeAsset.url);
+      }
+    }
+    if (prompt.trim()) {
+      formData.set("prompt", prompt.trim());
+    }
 
     try {
-      const res = await fetch("/api/judge/claude", { method: "POST", body: formData });
-      const body = (await res.json()) as JudgeRunResponse;
+      const res = await fetch("/api/judge/run", { method: "POST", body: formData });
+      const body = (await res.json()) as RunResponse;
       if (!body.ok) {
-        setClaudeStatus("error");
-        setClaudeError(body.error);
+        setRunError(body.error);
+        setRunStatus("idle");
+        setResult(null);
+        onResult(null);
         return;
       }
-      setClaudeResults(body.results);
-      setClaudeStatus("complete");
+      setResult(body);
+      onResult(body);
+      setRunStatus("done");
     } catch {
-      setClaudeStatus("error");
-      setClaudeError("Couldn't reach the judge route — check the dev server is running.");
+      setRunError("Couldn't reach the evaluation route — check the dev server is running.");
+      setRunStatus("idle");
+      setResult(null);
+      onResult(null);
     }
   }
+
+  const overallScore =
+    result && result.consensus.length > 0
+      ? Math.round(mean(result.consensus.map((d) => d.consensus)))
+      : null;
+  const contestedCount = result?.consensus.filter((d) => d.contested).length ?? 0;
+  const successfulJudges = result
+    ? (Object.values(result.outcomes).filter((o) => o.ok).length as number)
+    : 0;
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
@@ -75,20 +173,27 @@ export function EvaluationEnginePanel({ asset }: EvaluationEnginePanelProps) {
             <Gauge className="h-3.5 w-3.5" />
             Consensus score
           </h2>
-          <StatusBadge status={scoreStatus(MOCK_OVERALL_SCORE)} />
+          {overallScore !== null && <StatusBadge status={scoreStatus(overallScore)} />}
         </div>
-        <p
-          className={`mt-2 font-mono text-4xl font-bold tabular-nums ${scoreColorClass(MOCK_OVERALL_SCORE)}`}
-        >
-          {MOCK_OVERALL_SCORE}
-          <span className="text-lg font-medium text-zinc-600">/100</span>
-        </p>
-        <p className="mt-1 text-[11px] text-zinc-500">
-          Median across 4 judges · std dev flags spread &gt; 15pts as contested
-        </p>
-        <p className="mt-1 text-[11px] text-zinc-600">
-          Still mock — real deterministic consensus lands in milestone 4.
-        </p>
+        {overallScore !== null ? (
+          <>
+            <p className={`mt-2 font-mono text-4xl font-bold tabular-nums ${scoreColorClass(overallScore)}`}>
+              {overallScore}
+              <span className="text-lg font-medium text-zinc-600">/100</span>
+            </p>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              Mean of {result?.consensus.length} active-dimension medians · {successfulJudges}/4 judges
+              responded
+            </p>
+            {contestedCount > 0 && (
+              <p className="mt-1 text-[11px] text-amber-400/80">
+                {contestedCount} dimension{contestedCount === 1 ? "" : "s"} contested (spread &gt; 15pts)
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="mt-2 text-xs text-zinc-500">Run an evaluation to see a real score here.</p>
+        )}
       </section>
 
       <section>
@@ -97,29 +202,37 @@ export function EvaluationEnginePanel({ asset }: EvaluationEnginePanelProps) {
         </h2>
         <ul className="mt-2 space-y-1.5">
           {JUDGES.map((judge) => {
-            const status = judge.id === "claude" ? claudeStatus : judge.status;
+            const outcome = result?.outcomes[judge.id];
+            const status: JudgeStatus = outcome
+              ? outcome.ok
+                ? "complete"
+                : "error"
+              : runStatus === "pending"
+                ? "pending"
+                : "idle";
             return (
               <li
                 key={judge.id}
-                className="flex items-center justify-between gap-2 rounded-md border border-zinc-800/70 bg-zinc-900/30 px-2.5 py-2"
+                className="rounded-md border border-zinc-800/70 bg-zinc-900/30 px-2.5 py-2"
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${JUDGE_STATUS_DOT[status]}`} />
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-medium text-zinc-300">
-                      {judge.name}
-                      {judge.id === "claude" && (
-                        <span className="ml-1.5 text-[10px] font-normal text-emerald-500">
-                          live
-                        </span>
-                      )}
-                    </p>
-                    <p className="truncate font-mono text-[11px] text-zinc-600">
-                      {judge.modelId}
-                    </p>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${JUDGE_STATUS_DOT[status]}`} />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-zinc-300">{judge.name}</p>
+                      <p className="truncate font-mono text-[11px] text-zinc-600">{judge.modelId}</p>
+                    </div>
                   </div>
+                  <span className="shrink-0 text-[11px] text-zinc-500">{judge.role}</span>
                 </div>
-                <span className="shrink-0 text-[11px] text-zinc-500">{judge.role}</span>
+                {outcome && !outcome.ok && (
+                  <p className="mt-1.5 flex items-start gap-1 text-[11px] text-rose-400">
+                    <span className="mt-0.5 shrink-0 rounded bg-rose-500/15 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-300">
+                      {ERROR_CATEGORY_LABEL[outcome.category]}
+                    </span>
+                    <span className="leading-snug">{linkify(outcome.error)}</span>
+                  </p>
+                )}
               </li>
             );
           })}
@@ -129,99 +242,87 @@ export function EvaluationEnginePanel({ asset }: EvaluationEnginePanelProps) {
       <section className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
-            Claude Opus 4.8 — live judge
+            Run evaluation — all 4 judges
           </h2>
           <button
             type="button"
-            onClick={runClaudeJudge}
-            disabled={!asset || claudeStatus === "pending"}
+            onClick={runEvaluation}
+            disabled={!!blockedReason || runStatus === "pending"}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-indigo-500/15"
           >
-            {claudeStatus === "pending" ? (
+            {runStatus === "pending" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Play className="h-3.5 w-3.5" />
             )}
-            {claudeStatus === "pending" ? "Evaluating…" : "Run judge"}
+            {runStatus === "pending" ? "Evaluating…" : "Run judge"}
           </button>
         </div>
 
-        {!asset && (
-          <p className="mt-2 text-[11px] text-zinc-500">
-            Load an asset in the center pane to enable this.
-          </p>
-        )}
+        {blockedReason && <p className="mt-2 text-[11px] text-zinc-500">{blockedReason}</p>}
 
-        {claudeStatus === "error" && claudeError && (
+        {runError && (
           <p className="mt-2 flex items-start gap-1.5 text-xs text-rose-400">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {claudeError}
+            {runError}
           </p>
         )}
 
-        {claudeStatus === "complete" && claudeResults && (
-          <ul className="mt-3 space-y-2.5">
-            {claudeResults.map((r) => (
-              <li key={r.dimensionId}>
+        {result && (
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Mode: {MODE_LABEL[result.mode]} · {result.consensus.length} dimension
+            {result.consensus.length === 1 ? "" : "s"} · {successfulJudges}/4 judges responded
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          Dimension breakdown
+        </h2>
+        {!result ? (
+          <p className="mt-2 text-xs text-zinc-500">Nothing scored yet.</p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {result.consensus.map((d) => (
+              <li key={d.dimensionId}>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-300">{labelFor(r.dimensionId)}</span>
-                  <span className={`font-mono font-semibold ${scoreColorClass(r.score)}`}>
-                    {r.score}
+                  <span className="flex items-center gap-1.5 text-zinc-400">
+                    {d.contested && <AlertTriangle className="h-3 w-3 text-amber-400" />}
+                    {labelFor(d.dimensionId)}
+                  </span>
+                  <span className={`font-mono font-semibold ${scoreColorClass(d.consensus)}`}>
+                    {d.consensus}
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
                   <div
-                    className="h-full rounded-full bg-indigo-400"
-                    style={{ width: `${r.score}%` }}
+                    className={`h-full rounded-full ${d.contested ? "bg-amber-400" : "bg-indigo-500"}`}
+                    style={{ width: `${d.consensus}%` }}
                   />
                 </div>
-                <p className="mt-1 text-[11px] leading-snug text-zinc-500">{r.rationale}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
+                  {(Object.keys(d.judgeScores) as JudgeId[]).map((judgeId) => (
+                    <span key={judgeId}>
+                      {JUDGE_SHORT_LABEL[judgeId]} {d.judgeScores[judgeId]}
+                    </span>
+                  ))}
+                </div>
+                {d.contested && (
+                  <p className="mt-1 text-[11px] text-amber-400/80">
+                    Contested · σ {d.dissent.toFixed(1)}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
         )}
       </section>
 
-      <section>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-          Dimension breakdown <span className="text-zinc-700">(mock)</span>
-        </h2>
-        <ul className="mt-2 space-y-2">
-          {MOCK_DIMENSION_SCORES.map((d) => (
-            <li key={d.dimensionId}>
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-zinc-400">
-                  {d.contested && (
-                    <AlertTriangle className="h-3 w-3 text-amber-400" />
-                  )}
-                  {labelFor(d.dimensionId)}
-                </span>
-                <span className={`font-mono font-semibold ${scoreColorClass(d.consensus)}`}>
-                  {d.consensus}
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-                <div
-                  className={`h-full rounded-full ${
-                    d.contested ? "bg-amber-400" : "bg-indigo-500"
-                  }`}
-                  style={{ width: `${d.consensus}%` }}
-                />
-              </div>
-              {d.contested && (
-                <p className="mt-1 text-[11px] text-amber-400/80">
-                  Contested · σ {d.dissent.toFixed(1)}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
-
       <section className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4">
         <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
           <Wrench className="h-3.5 w-3.5" />
-          Root cause — {MOCK_ROOT_CAUSE.label}
+          Root cause — {MOCK_ROOT_CAUSE.label} <span className="text-zinc-600">(mock)</span>
         </h2>
         <p className="mt-2 text-xs leading-relaxed text-zinc-400">
           {MOCK_ROOT_CAUSE.summary}

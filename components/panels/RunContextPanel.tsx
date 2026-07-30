@@ -45,17 +45,26 @@ export function RunContextPanel() {
       <section>
         <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
           <ListChecks className="h-3.5 w-3.5" />
-          Rubric — 6 dimensions
+          Rubric — adaptive, up to 8 dimensions
         </h2>
+        <p className="mt-1 text-[11px] leading-snug text-zinc-600">
+          Which ones score depends on what you give it — an image alone, an image with a
+          prompt, or a before/after pair.
+        </p>
         <ul className="mt-2 space-y-1.5">
           {RUBRIC_DIMENSIONS.map((dim, i) => (
             <li
               key={dim.id}
               className="rounded-md border border-zinc-800/70 bg-zinc-900/30 px-2.5 py-1.5"
             >
-              <p className="text-xs font-medium text-zinc-300">
-                <span className="text-zinc-600">{i + 1}.</span> {dim.label}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs font-medium text-zinc-300">
+                  <span className="text-zinc-600">{i + 1}.</span> {dim.label}
+                </p>
+                <span className="shrink-0 rounded-full bg-zinc-800/70 px-1.5 py-0.5 text-[10px] text-zinc-500">
+                  {dim.needs}
+                </span>
+              </div>
               <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
                 {dim.description}
               </p>
