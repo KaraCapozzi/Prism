@@ -111,3 +111,32 @@ judge with GPT-5.6 Terra not Sol; Muse Image outputs are FREE via the Meta AI ap
 - Every provider call in try/catch with the categorized error states above.
 - Ask me before adding a database, auth, or a fifth model.
 - Re-confirm current model IDs against provider docs at build time; flag any changes.
+
+## Two separate review systems (ARCHITECTURAL LAW — never merge)
+Prism has TWO independent evaluation systems. They must never combine into one score.
+
+TECHNICAL EVALUATION — "Did the model do what it was asked?"
+- Objective. Judges should agree. Median consensus + contested flags. Anchored 0–100.
+- Blue UI. Shows convergence: one consensus bar per dimension.
+
+EDITORIAL REVIEW — "Would an editor publish this?"
+- Interpretive. Judges are EXPECTED to disagree; the disagreement is the output. NO single verdict.
+- Interpretation-first: each judge writes an Editorial Thesis (one sentence, grounded in visible
+  evidence, allowed to be mundane — never invent artistic meaning) BEFORE scoring.
+- Dimensions: Creative Intent, Editorial Effectiveness, Audience Resonance, Execution Quality,
+  Distinctiveness vs. Algorithmic Generic, Motion & Temporal Cohesion (video-only; N/A for stills).
+- Per judge also: Confidence (High/Med/Low), Editorial Risk (Low/Med/High), and a Recommendation
+  (Publish / Publish with Edits / Hold / Reject).
+- Purple UI. Shows divergence: leads with the thesis comparison + recommendation spread; per-dim
+  shows each judge's score, not a consensus bar. Persistent "subjective signal, not a verdict" banner.
+
+RULES:
+- Separate system prompts, separate API calls, separate UI panels. No cross-contamination.
+- NEVER produce a blended/overall score fusing technical and editorial. That erases the thesis.
+- Both tracks use the same four judges (Claude, GPT, Gemini, Muse). Sonnet 5 is the dissent
+  NARRATOR only — never an editorial judge.
+- Editorial is opt-in (toggle OFF by default). Technical is the default.
+- The Editorial Thesis must be grounded in observable evidence; "generic, no discernible intent"
+  is a valid thesis. Do not manufacture meaning.
+- Any new evaluation dimension set is NOT exempt from the flattening + reliability + anti-invention
+  tests the technical track passed. Test the editorial track the same way before trusting it.

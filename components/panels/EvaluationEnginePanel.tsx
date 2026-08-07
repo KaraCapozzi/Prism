@@ -5,11 +5,12 @@ import {
   CheckCircle2,
   Gauge,
   Loader2,
+  MessageCircle,
   Play,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
-import { JUDGES, MOCK_ROOT_CAUSE, RUBRIC_DIMENSIONS } from "@/lib/mock-data";
+import { JUDGES, RUBRIC_DIMENSIONS } from "@/lib/mock-data";
 import type {
   AssetInput,
   EvalMode,
@@ -203,6 +204,7 @@ export function EvaluationEnginePanel({
         <ul className="mt-2 space-y-1.5">
           {JUDGES.map((judge) => {
             const outcome = result?.outcomes[judge.id];
+            const flattenedReason = result?.excludedFromConsensus?.[judge.id];
             const status: JudgeStatus = outcome
               ? outcome.ok
                 ? "complete"
@@ -217,7 +219,9 @@ export function EvaluationEnginePanel({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${JUDGE_STATUS_DOT[status]}`} />
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${flattenedReason ? "bg-amber-400" : JUDGE_STATUS_DOT[status]}`}
+                    />
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium text-zinc-300">{judge.name}</p>
                       <p className="truncate font-mono text-[11px] text-zinc-600">{judge.modelId}</p>
@@ -231,6 +235,17 @@ export function EvaluationEnginePanel({
                       {ERROR_CATEGORY_LABEL[outcome.category]}
                     </span>
                     <span className="leading-snug">{linkify(outcome.error)}</span>
+                  </p>
+                )}
+                {outcome?.ok && flattenedReason && (
+                  <p className="mt-1.5 flex items-start gap-1 text-[11px] text-amber-400">
+                    <span className="mt-0.5 shrink-0 rounded bg-amber-500/15 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
+                      Known limitation
+                    </span>
+                    <span className="leading-snug">
+                      Forced-mode flattening — returned {outcome.results[0]?.score} across every
+                      dimension, excluded from this run&apos;s consensus.
+                    </span>
                   </p>
                 )}
               </li>
@@ -284,37 +299,59 @@ export function EvaluationEnginePanel({
           <p className="mt-2 text-xs text-zinc-500">Nothing scored yet.</p>
         ) : (
           <ul className="mt-2 space-y-2">
-            {result.consensus.map((d) => (
-              <li key={d.dimensionId}>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5 text-zinc-400">
-                    {d.contested && <AlertTriangle className="h-3 w-3 text-amber-400" />}
-                    {labelFor(d.dimensionId)}
-                  </span>
-                  <span className={`font-mono font-semibold ${scoreColorClass(d.consensus)}`}>
-                    {d.consensus}
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-                  <div
-                    className={`h-full rounded-full ${d.contested ? "bg-amber-400" : "bg-indigo-500"}`}
-                    style={{ width: `${d.consensus}%` }}
-                  />
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
-                  {(Object.keys(d.judgeScores) as JudgeId[]).map((judgeId) => (
-                    <span key={judgeId}>
-                      {JUDGE_SHORT_LABEL[judgeId]} {d.judgeScores[judgeId]}
+            {result.consensus.map((d) => {
+              const dissentNote = result.dissentNotes.find((n) => n.dimensionId === d.dimensionId);
+              return (
+                <li key={d.dimensionId}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 text-zinc-400">
+                      {d.contested && <AlertTriangle className="h-3 w-3 text-amber-400" />}
+                      {labelFor(d.dimensionId)}
                     </span>
-                  ))}
-                </div>
-                {d.contested && (
-                  <p className="mt-1 text-[11px] text-amber-400/80">
-                    Contested · σ {d.dissent.toFixed(1)}
-                  </p>
-                )}
-              </li>
-            ))}
+                    <span className={`font-mono font-semibold ${scoreColorClass(d.consensus)}`}>
+                      {d.consensus}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      className={`h-full rounded-full ${d.contested ? "bg-amber-400" : "bg-indigo-500"}`}
+                      style={{ width: `${d.consensus}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-500">
+                    {(Object.keys(d.judgeScores) as JudgeId[]).map((judgeId) => (
+                      <span key={judgeId}>
+                        {JUDGE_SHORT_LABEL[judgeId]} {d.judgeScores[judgeId]}
+                      </span>
+                    ))}
+                  </div>
+                  {d.contested && (
+                    <p className="mt-1 text-[11px] text-amber-400/80">
+                      Contested · σ {d.dissent.toFixed(1)}
+                    </p>
+                  )}
+                  {dissentNote && (
+                    <div className="mt-1 flex items-start gap-1.5 rounded-md bg-zinc-900/60 px-2 py-1.5">
+                      <MessageCircle className="mt-0.5 h-3 w-3 shrink-0 text-indigo-400" />
+                      {dissentNote.result.ok ? (
+                        <p className="text-[11px] italic leading-snug text-zinc-400">
+                          {dissentNote.result.note}
+                        </p>
+                      ) : (
+                        <p className="flex items-start gap-1 text-[11px] text-rose-400">
+                          <span className="mt-0.5 shrink-0 rounded bg-rose-500/15 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-300">
+                            {ERROR_CATEGORY_LABEL[dissentNote.result.category]}
+                          </span>
+                          <span className="leading-snug">
+                            Narration unavailable — {linkify(dissentNote.result.error)}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -322,15 +359,32 @@ export function EvaluationEnginePanel({
       <section className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-4">
         <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
           <Wrench className="h-3.5 w-3.5" />
-          Root cause — {MOCK_ROOT_CAUSE.label} <span className="text-zinc-600">(mock)</span>
+          Root cause
         </h2>
-        <p className="mt-2 text-xs leading-relaxed text-zinc-400">
-          {MOCK_ROOT_CAUSE.summary}
-        </p>
-        <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-emerald-400/90">
-          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {MOCK_ROOT_CAUSE.fix}
-        </p>
+        {!result ? (
+          <p className="mt-2 text-xs text-zinc-500">Nothing scored yet.</p>
+        ) : result.rootCause === null ? (
+          <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-emerald-400/90">
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            No dominant failure — every dimension scored in the &quot;no observable problems&quot; band.
+          </p>
+        ) : !result.rootCause.ok ? (
+          <p className="mt-2 flex items-start gap-1.5 text-xs text-rose-400">
+            <span className="mt-0.5 shrink-0 rounded bg-rose-500/15 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-300">
+              {ERROR_CATEGORY_LABEL[result.rootCause.category]}
+            </span>
+            <span className="leading-relaxed">{linkify(result.rootCause.error)}</span>
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-[11px] font-medium text-rose-300">{result.rootCause.finding.label}</p>
+            <p className="mt-2 text-xs leading-relaxed text-zinc-400">{result.rootCause.finding.summary}</p>
+            <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-emerald-400/90">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {result.rootCause.finding.fix}
+            </p>
+          </>
+        )}
       </section>
     </div>
   );

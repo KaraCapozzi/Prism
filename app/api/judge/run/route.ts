@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
-import { computeConsensus } from "@/lib/consensus";
+import { computeConsensus, scoresAreFlat } from "@/lib/consensus";
 import { readImage, type JudgeImageInput } from "@/lib/image-input";
+import { analyzeRootCause, narrateDissent } from "@/lib/insights";
 import { callClaudeJudge } from "@/lib/judges/claude";
 import { callGeminiJudge } from "@/lib/judges/gemini";
 import { callGptJudge } from "@/lib/judges/gpt";
 import { callMuseSparkJudge } from "@/lib/judges/muse-spark";
-import type { EvalMode, JudgeId, JudgeRunFailure, JudgeRunResponse, MultiJudgeRunResponse } from "@/lib/types";
+import type {
+  DissentNote,
+  EvalMode,
+  JudgeId,
+  JudgeRunFailure,
+  JudgeRunResponse,
+  MultiJudgeRunResponse,
+} from "@/lib/types";
+
+const GEMINI_FLATTENING_REASON = "known limitation — forced-mode flattening";
 
 export const runtime = "nodejs";
 
@@ -67,7 +77,37 @@ export async function POST(request: Request) {
     "muse-spark": museSpark,
   };
 
-  const consensus = computeConsensus(outcomes);
-  const body: MultiJudgeRunResponse = { ok: true, mode, outcomes, consensus };
+  // Gemini's forced-mode flattening only shows up in before-after (8-dimension)
+  // mode — single-image mode and the other three judges are never touched here.
+  // A flat run is still shown to the user (see UI), just kept out of the median
+  // math so it can't drag the consensus toward a number nobody actually judged.
+  let excludedFromConsensus: Partial<Record<JudgeId, string>> | undefined;
+  const consensusInput: Partial<Record<JudgeId, JudgeRunResponse>> = { ...outcomes };
+  if (mode === "before-after" && gemini.ok && scoresAreFlat(gemini.results)) {
+    excludedFromConsensus = { gemini: GEMINI_FLATTENING_REASON };
+    delete consensusInput.gemini;
+  }
+
+  const consensus = computeConsensus(consensusInput);
+
+  const contestedDimensions = consensus.filter((d) => d.contested);
+  const dissentNotes: DissentNote[] = await Promise.all(
+    contestedDimensions.map(async (d) => ({
+      dimensionId: d.dimensionId,
+      result: await narrateDissent(d.dimensionId, outcomes),
+    })),
+  );
+
+  const rootCause = await analyzeRootCause(consensus, outcomes);
+
+  const body: MultiJudgeRunResponse = {
+    ok: true,
+    mode,
+    outcomes,
+    consensus,
+    ...(excludedFromConsensus ? { excludedFromConsensus } : {}),
+    dissentNotes,
+    rootCause,
+  };
   return NextResponse.json(body);
 }

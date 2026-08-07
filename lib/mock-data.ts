@@ -1,5 +1,5 @@
 import { RUBRIC_DIMENSIONS } from "./rubric-schema";
-import type { AssetMeta, Judge, RootCauseFinding, RunSummary } from "./types";
+import type { AssetMeta, Judge, RunSummary } from "./types";
 
 export { RUBRIC_DIMENSIONS };
 
@@ -29,15 +29,6 @@ export const JUDGES: Judge[] = [
     role: "Fine visual-detail",
   },
 ];
-
-// Root-cause taxonomy is still milestone 5 — left as an illustrative mock example.
-export const MOCK_ROOT_CAUSE: RootCauseFinding = {
-  category: "prompt-drift",
-  label: "Prompt drift (omission)",
-  summary:
-    'The prompt asked for a caption reading "SAVE 20%" over the product shot, but the render left it out entirely, and the little text that did appear elsewhere in the frame lost contrast against the background.',
-  fix: "Re-prompt with the caption text and its placement stated as its own explicit instruction, separate from the rest of the edit, and ask for a higher-contrast text treatment.",
-};
 
 export const MOCK_ASSET: AssetMeta = {
   fileName: "edits_muse_export_014.png",
