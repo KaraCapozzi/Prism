@@ -13,6 +13,8 @@ import { useState } from "react";
 import { JUDGES, RUBRIC_DIMENSIONS } from "@/lib/mock-data";
 import type {
   AssetInput,
+  EditorialApiResponse,
+  EditorialMultiJudgeResponse,
   EvalMode,
   JudgeErrorCategory,
   JudgeId,
@@ -21,6 +23,7 @@ import type {
   RunResponse,
 } from "@/lib/types";
 import { scoreColorClass, scoreStatus, StatusBadge } from "@/components/StatusBadge";
+import { EditorialReviewPanel } from "@/components/panels/EditorialReviewPanel";
 
 const JUDGE_STATUS_DOT: Record<JudgeStatus, string> = {
   idle: "bg-zinc-600",
@@ -88,6 +91,7 @@ interface EvaluationEnginePanelProps {
   editMode: boolean;
   beforeAsset: AssetInput | null;
   onResult: (result: MultiJudgeRunResponse | null) => void;
+  editorialEnabled: boolean;
 }
 
 export function EvaluationEnginePanel({
@@ -96,10 +100,13 @@ export function EvaluationEnginePanel({
   editMode,
   beforeAsset,
   onResult,
+  editorialEnabled,
 }: EvaluationEnginePanelProps) {
   const [runStatus, setRunStatus] = useState<"idle" | "pending" | "done">("idle");
   const [result, setResult] = useState<MultiJudgeRunResponse | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [editorialResult, setEditorialResult] = useState<EditorialMultiJudgeResponse | null>(null);
+  const [editorialRunError, setEditorialRunError] = useState<string | null>(null);
 
   function missingPieces(): string | null {
     if (!editMode) {
@@ -118,6 +125,10 @@ export function EvaluationEnginePanel({
     if (blockedReason || runStatus === "pending" || !asset) return;
     setRunStatus("pending");
     setRunError(null);
+    if (editorialEnabled) {
+      setEditorialRunError(null);
+      setEditorialResult(null);
+    }
 
     const formData = new FormData();
     if (asset.kind === "upload") {
@@ -136,24 +147,61 @@ export function EvaluationEnginePanel({
       formData.set("prompt", prompt.trim());
     }
 
-    try {
-      const res = await fetch("/api/judge/run", { method: "POST", body: formData });
-      const body = (await res.json()) as RunResponse;
-      if (!body.ok) {
-        setRunError(body.error);
-        setRunStatus("idle");
-        setResult(null);
-        onResult(null);
-        return;
-      }
-      setResult(body);
-      onResult(body);
-      setRunStatus("done");
-    } catch {
+    // Editorial only ever needs the current (after) image — its own separate
+    // request, separate route, separate prompt. Never the same call as technical.
+    const editorialFormData = new FormData();
+    if (asset.kind === "upload") {
+      editorialFormData.set("file", asset.file);
+    } else {
+      editorialFormData.set("url", asset.url);
+    }
+
+    const [technicalSettled, editorialSettled] = await Promise.allSettled([
+      fetch("/api/judge/run", { method: "POST", body: formData }),
+      editorialEnabled ? fetch("/api/editorial/run", { method: "POST", body: editorialFormData }) : Promise.resolve(null),
+    ]);
+
+    if (technicalSettled.status === "rejected") {
       setRunError("Couldn't reach the evaluation route — check the dev server is running.");
       setRunStatus("idle");
       setResult(null);
       onResult(null);
+    } else {
+      try {
+        const body = (await technicalSettled.value.json()) as RunResponse;
+        if (!body.ok) {
+          setRunError(body.error);
+          setRunStatus("idle");
+          setResult(null);
+          onResult(null);
+        } else {
+          setResult(body);
+          onResult(body);
+          setRunStatus("done");
+        }
+      } catch {
+        setRunError("Couldn't reach the evaluation route — check the dev server is running.");
+        setRunStatus("idle");
+        setResult(null);
+        onResult(null);
+      }
+    }
+
+    if (editorialEnabled) {
+      if (editorialSettled.status === "rejected" || editorialSettled.value === null) {
+        setEditorialRunError("Couldn't reach the editorial review route — check the dev server is running.");
+      } else {
+        try {
+          const body = (await editorialSettled.value.json()) as EditorialApiResponse;
+          if (!body.ok) {
+            setEditorialRunError(body.error);
+          } else {
+            setEditorialResult(body);
+          }
+        } catch {
+          setEditorialRunError("Couldn't reach the editorial review route — check the dev server is running.");
+        }
+      }
     }
   }
 
@@ -386,6 +434,17 @@ export function EvaluationEnginePanel({
           </>
         )}
       </section>
+
+      {editorialEnabled && (
+        <>
+          <div className="border-t-4 border-purple-500/30" />
+          <EditorialReviewPanel
+            status={runStatus}
+            result={editorialResult}
+            runError={editorialRunError}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ArrowLeftRight,
   Link2,
+  Palette,
   Sparkles,
   UploadCloud,
   X,
@@ -31,6 +32,8 @@ interface AssetHeroPanelProps {
   beforeAsset: AssetInput | null;
   onBeforeAssetChange: (next: AssetInput | null) => void;
   consensus: ConsensusDimension[] | null;
+  editorialEnabled: boolean;
+  onEditorialEnabledChange: (next: boolean) => void;
 }
 
 const INPUT_MODES: { mode: InputMode; label: string; icon: typeof UploadCloud }[] = [
@@ -53,6 +56,8 @@ export function AssetHeroPanel({
   beforeAsset,
   onBeforeAssetChange,
   consensus,
+  editorialEnabled,
+  onEditorialEnabledChange,
 }: AssetHeroPanelProps) {
   const contestedDimensions = consensus?.filter((d) => d.contested) ?? [];
 
@@ -145,6 +150,19 @@ export function AssetHeroPanel({
           >
             <ArrowLeftRight className="h-3.5 w-3.5" />
             Edit mode
+          </button>
+          <button
+            type="button"
+            onClick={() => onEditorialEnabledChange(!editorialEnabled)}
+            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              editorialEnabled
+                ? "bg-purple-500/15 text-purple-300 ring-1 ring-inset ring-purple-500/30"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+            title="Interpretive review — separate from the technical panel, judges are expected to disagree"
+          >
+            <Palette className="h-3.5 w-3.5" />
+            Editorial Review
           </button>
         </div>
         <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[11px] font-medium tracking-wide text-zinc-500 ring-1 ring-inset ring-zinc-800">

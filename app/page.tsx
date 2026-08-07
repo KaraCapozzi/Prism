@@ -14,6 +14,7 @@ export default function Home() {
   const [beforeAsset, setBeforeAsset] = useState<AssetInput | null>(null);
   const [prompt, setPrompt] = useState("");
   const [editMode, setEditMode] = useState(false);
+  const [editorialEnabled, setEditorialEnabled] = useState(false);
   const [runResult, setRunResult] = useState<MultiJudgeRunResponse | null>(null);
 
   // Object URLs for uploaded files are only valid as long as we hold onto
@@ -76,6 +77,8 @@ export default function Home() {
             beforeAsset={beforeAsset}
             onBeforeAssetChange={handleBeforeAssetChange}
             consensus={runResult?.consensus ?? null}
+            editorialEnabled={editorialEnabled}
+            onEditorialEnabledChange={setEditorialEnabled}
           />
         </div>
         <div className="min-h-0">
@@ -85,6 +88,7 @@ export default function Home() {
             editMode={editMode}
             beforeAsset={beforeAsset}
             onResult={setRunResult}
+            editorialEnabled={editorialEnabled}
           />
         </div>
       </main>
