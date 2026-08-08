@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  EyeOff,
   Gauge,
   Loader2,
   MessageCircle,
@@ -24,6 +25,7 @@ import type {
 } from "@/lib/types";
 import { scoreColorClass, scoreStatus, StatusBadge } from "@/components/StatusBadge";
 import { EditorialReviewPanel } from "@/components/panels/EditorialReviewPanel";
+import { EditorialDecisionPanel } from "@/components/panels/EditorialDecisionPanel";
 
 const JUDGE_STATUS_DOT: Record<JudgeStatus, string> = {
   idle: "bg-zinc-600",
@@ -107,6 +109,13 @@ export function EvaluationEnginePanel({
   const [runError, setRunError] = useState<string | null>(null);
   const [editorialResult, setEditorialResult] = useState<EditorialMultiJudgeResponse | null>(null);
   const [editorialRunError, setEditorialRunError] = useState<string | null>(null);
+  // Editorial Decision stage — sits above both tracks. "Decide blind" collapses the
+  // technical + editorial panels below until the human submits, to avoid anchoring
+  // their call on the AI's output. `runId` forces EditorialDecisionPanel to remount
+  // (clearing its local decision state) whenever a fresh run starts.
+  const [decideBlind, setDecideBlind] = useState(true);
+  const [submitted, setSubmitted] = useState(false);
+  const [runId, setRunId] = useState(0);
 
   function missingPieces(): string | null {
     if (!editMode) {
@@ -125,6 +134,8 @@ export function EvaluationEnginePanel({
     if (blockedReason || runStatus === "pending" || !asset) return;
     setRunStatus("pending");
     setRunError(null);
+    setSubmitted(false);
+    setRunId((n) => n + 1);
     if (editorialEnabled) {
       setEditorialRunError(null);
       setEditorialResult(null);
@@ -213,9 +224,61 @@ export function EvaluationEnginePanel({
   const successfulJudges = result
     ? (Object.values(result.outcomes).filter((o) => o.ok).length as number)
     : 0;
+  const revealed = !decideBlind || submitted;
+  const showCollapsed = !!result && !revealed;
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
+      <section className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
+            Run evaluation — all 4 judges
+          </h2>
+          <button
+            type="button"
+            onClick={runEvaluation}
+            disabled={!!blockedReason || runStatus === "pending"}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-indigo-500/15"
+          >
+            {runStatus === "pending" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            {runStatus === "pending" ? "Evaluating…" : "Run judge"}
+          </button>
+        </div>
+
+        {blockedReason && <p className="mt-2 text-[11px] text-zinc-500">{blockedReason}</p>}
+
+        {runError && (
+          <p className="mt-2 flex items-start gap-1.5 text-xs text-rose-400">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {runError}
+          </p>
+        )}
+
+        {result && (
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Mode: {MODE_LABEL[result.mode]} · {result.consensus.length} dimension
+            {result.consensus.length === 1 ? "" : "s"} · {successfulJudges}/4 judges responded
+          </p>
+        )}
+      </section>
+
+      {showCollapsed && (
+        <div className="flex flex-col items-center gap-1.5 rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-6 text-center">
+          <EyeOff className="h-5 w-5 text-cyan-400" />
+          <p className="text-xs font-medium text-cyan-300">Deciding blind</p>
+          <p className="max-w-xs text-[11px] leading-snug text-cyan-300/70">
+            Technical scores and editorial recommendations are hidden until you submit your
+            decision in the Editorial Decision stage below.
+          </p>
+        </div>
+      )}
+
+      {!showCollapsed && (
+        <>
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
         <div className="flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
@@ -300,43 +363,6 @@ export function EvaluationEnginePanel({
             );
           })}
         </ul>
-      </section>
-
-      <section className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-indigo-300">
-            Run evaluation — all 4 judges
-          </h2>
-          <button
-            type="button"
-            onClick={runEvaluation}
-            disabled={!!blockedReason || runStatus === "pending"}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-indigo-500/15 px-2.5 py-1.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30 hover:bg-indigo-500/25 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-indigo-500/15"
-          >
-            {runStatus === "pending" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Play className="h-3.5 w-3.5" />
-            )}
-            {runStatus === "pending" ? "Evaluating…" : "Run judge"}
-          </button>
-        </div>
-
-        {blockedReason && <p className="mt-2 text-[11px] text-zinc-500">{blockedReason}</p>}
-
-        {runError && (
-          <p className="mt-2 flex items-start gap-1.5 text-xs text-rose-400">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {runError}
-          </p>
-        )}
-
-        {result && (
-          <p className="mt-2 text-[11px] text-zinc-500">
-            Mode: {MODE_LABEL[result.mode]} · {result.consensus.length} dimension
-            {result.consensus.length === 1 ? "" : "s"} · {successfulJudges}/4 judges responded
-          </p>
-        )}
       </section>
 
       <section>
@@ -445,6 +471,21 @@ export function EvaluationEnginePanel({
           />
         </>
       )}
+        </>
+      )}
+
+      <div className="border-t-4 border-cyan-500/30" />
+      <EditorialDecisionPanel
+        key={runId}
+        asset={asset}
+        technicalResult={result}
+        editorialEnabled={editorialEnabled}
+        editorialResult={editorialResult}
+        decideBlind={decideBlind}
+        onDecideBlindChange={setDecideBlind}
+        submitted={submitted}
+        onSubmittedChange={setSubmitted}
+      />
     </div>
   );
 }

@@ -140,3 +140,38 @@ RULES:
   is a valid thesis. Do not manufacture meaning.
 - Any new evaluation dimension set is NOT exempt from the flattening + reliability + anti-invention
   tests the technical track passed. Test the editorial track the same way before trusting it.
+
+## Human-in-the-loop / calibration layer (ARCHITECTURAL LAW)
+Thesis (state verbatim):
+"AI evaluation informs editorial decisions — it does not replace them. Technical and editorial
+reviews provide decision support, while the human reviewer makes the final publishing decision.
+Human decisions, especially disagreements with AI judges, become structured learning signals that
+populate golden datasets, improve calibration, and refine future evaluation frameworks. Confidence
+routing ensures that only genuinely ambiguous or contested assets require human review, allowing
+editorial judgment to scale without sacrificing quality."
+
+- The human is a participant, not a spectator: they record their own score (0–100), a verdict
+  (Publish / Publish with Edits / Hold / Reject), and a reason.
+- ANTI-ANCHORING GUARD: never pre-fill a human field with an AI value. The human scores BLIND
+  (AI scores hidden by default until they submit), then the tool reveals the model-vs-human delta.
+  This keeps the golden dataset from inheriting model bias — it is the point of the feature.
+- The stage is called "Editorial Decision," not "Human Review" — the human makes the publishing call.
+- LEARNING SIGNAL: after the reveal, if the human disagreed, capture a structured override-reason
+  taxonomy (Originality undervalued / Context-specific campaign / Creative intent misunderstood /
+  Prompt ambiguity / Technical false positive / Other). It renders ONLY post-reveal, never before
+  (pre-showing it primes the human). Selections are stored per golden record so they aggregate into
+  measurable judge failure modes.
+- Editorial Decision is STAGE 3 — it sits ABOVE both tracks, part of neither. The human's
+  Publish/Hold/Reject is an EDITORIAL act: compare it primarily against the Editorial Review
+  recommendation distribution, with technical results as supporting context. NEVER blend human and
+  model into one overall number (same no-merge law).
+- Human decisions accumulate into a Golden Dataset (localStorage, exportable as JSON) — this doubles
+  as the tool's ground-truth/calibration set.
+- Confidence routing considers BOTH tracks: auto-pass only when technical is clean AND editorial
+  recommendations agree; require a human when technical is contested OR editorial recommendations
+  are split. This is "human judgment at scale" — route only genuinely ambiguous assets to humans.
+- Out of scope for v1 (roadmap only): multi-reviewer adjudication, senior escalation.
+
+## Full pipeline (the four stages)
+Technical Evaluation → Editorial Review → Editorial Decision (human) → Learning Loop (Golden Dataset).
+AI assists; humans decide; human calls become the ground truth that validates the models.

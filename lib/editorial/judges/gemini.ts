@@ -90,6 +90,9 @@ function mapGeminiError(err: unknown): EditorialRunResponse {
   if (err instanceof Error && err.message.startsWith("Judge response")) {
     return { ok: false, category: "malformed-response", error: `Gemini returned an unexpected format: ${err.message}` };
   }
+  if (err instanceof Error && /fetch failed|ECONNRESET|ETIMEDOUT|network/i.test(err.message)) {
+    return { ok: false, category: "network", error: "Couldn't reach Gemini — network or timeout." };
+  }
   const message = err instanceof Error ? err.message : "Unknown error";
   return { ok: false, category: "unknown", error: `Gemini judge failed: ${message}` };
 }

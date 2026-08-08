@@ -1,6 +1,7 @@
 import { Clock, FileImage, History, ListChecks } from "lucide-react";
 import { MOCK_ASSET, MOCK_RUN_HISTORY, RUBRIC_DIMENSIONS } from "@/lib/mock-data";
 import { StatusBadge, scoreColorClass } from "@/components/StatusBadge";
+import { GoldenDatasetPanel } from "@/components/panels/GoldenDatasetPanel";
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString("en-US", {
@@ -105,6 +106,8 @@ export function RunContextPanel() {
           ))}
         </ul>
       </section>
+
+      <GoldenDatasetPanel />
     </div>
   );
 }
